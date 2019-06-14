@@ -37,3 +37,19 @@ ggplotly(
 
 fit <- lm(PER ~ MPG + AST + USG + REBR , nba.data.tidy)
 summary(fit)
+
+nba.data %>%
+  filter(grepl('LeBron|Kyrie|Kevin\\sLove', PLAYER))
+
+nba.data$contract.age <- cut(nba.data$AGE, 
+                             breaks = c(-Inf, 23, 27, 30, Inf), 
+                             labels = c("1st", "2nd", "3rd", "4+"))
+
+ggplotly(
+  ggplot(nba.data.tidy, aes(x = SALARY, y = PER)) +
+    geom_point(aes(text = PLAYER, color = contract.age)) +
+    geom_smooth(method = "lm") +
+    theme_bw() +
+    scale_x_continuous(labels = scales::comma) +
+    ggtitle("NBA PER vs Salary")
+)
