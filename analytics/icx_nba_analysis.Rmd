@@ -1,0 +1,204 @@
+---
+title: "ICX Media Analysis"
+author: Kevin Shea
+output:
+  html_notebook: 
+    toc: true
+    toc_depth: 3
+    theme: cosmo
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: cosmo
+  pdf_document: default
+---
+
+# NBA Player Statistics Challenge
+
+Analytics is about more than just numbers! At ICX, we take a holistic view of analysis, which includes gathering and interacting with data, performing statistical analyses, creating visualizations, and telling stories. For this challenge, you'll get to show off your end-to-end analytics chops!
+
+Given a dataset of NBA players performance and salary in 2014, use Python to load the dataset and compute summary statistics, then determine the relationship between player efficiency and create a custom visualization using Python to illustrate that story.
+
+The data can be found at http://bit.ly/2n9twqX 
+
+## Imports 
+
+```{r, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(plotly)
+
+```
+
+## Data Loading
+
+```{r, message=FALSE}
+
+nba.data <- read_csv("data/nba_players.csv")
+head(nba.data)
+
+```
+
+
+## Statistical Analysis
+
+### Summary Stats
+
+We see R's standard summary stats produces everything we need except for the mode, so we'll need to calculate that separately. We also see that the minimum salary is zero, which is not a valid salary. 
+
+```{r, message=FALSE}
+
+summary(nba.data$SALARY)
+
+```
+
+### Mode Calculation
+
+Unfortunately, R does not have a built-in "mode" function, so we'll have to write one ourselves.
+
+After we build the function and calculate the mode, we see zero is our most frequent salary. The NBA minimum salary is more than zero, so these values are most likely "unknown" and should be set to NA. 
+
+```{r, message=FALSE, warning=FALSE}
+
+get_mode <- function(my.data, my.variable) {
+  
+  my.data %>%
+    group_by_at(my.variable) %>%
+    count() %>%
+    ungroup() %>%
+    filter(n == max(n)) %>%
+    pull(my.variable)
+}
+
+get_mode(my.data = nba.data, my.variable = "SALARY")
+
+```
+
+## Tidy Our Data
+
+### Do we have any other data issues
+
+Let's take a quick look at the rest of our fields to see if anything else stands out as a data issue. 
+
+Based on these results, looks like some of these fields are rate or percent statistics rather than per game numbers. Assist, Turnover, and Rebound numbers don't align with expectations (ex. max AST number is higher than the record for number of assists in a game). 
+
+We'll leave them alone for now because we don't need them, but if we were doing further work we'd want to verify what these numbers represent. 
+
+```{r, message=FALSE}
+
+summary(nba.data)
+
+```
+
+### Replace zero values in Salary
+
+```{r, message=FALSE}
+
+nba.data.tidy <- nba.data %>%
+  mutate(SALARY = replace(SALARY, SALARY == 0, NA))
+
+```
+
+## Recalculate Statistics
+
+### Summary Stats
+
+We now see that we have 24 zero values that were reset to NA. We also see a minimum salary of `r min(nba.data.tidy$SALARY, na.rm = TRUE)` which is likely the NBA minimum salary.  
+
+```{r, message=FALSE}
+
+summary(nba.data.tidy$SALARY)
+
+```
+
+### Mode Again
+
+And we see our mode is no longer zero. 
+
+```{r, message=FALSE}
+
+get_mode(nba.data.tidy %>% filter(!is.na(SALARY)), "SALARY")
+
+```
+
+
+## Visualization
+
+From our quick visualization, we see there's a positive relationship between Salary and PER. 
+
+If I were a GM building an NBA team, I want players who are above our regression line. These are "bargain" players, meaning they are providing more PER than their salary alone would predict. 
+
+```{r, message=FALSE, fig.width=8, fig.height=6}
+
+fit <- lm(PER ~ SALARY, nba.data.tidy)
+my.rsquare <- summary(fit)$adj.r.squared
+my.intercept <- signif(fit$coefficients[[1]], 3)
+my.slope <- signif(fit$coefficients[[2]], 3)
+
+my.formula <- paste0("y = ", my.slope, "x + ", my.intercept)
+
+ggplotly(
+  ggplot(nba.data.tidy, aes(x = SALARY, y = PER)) +
+    geom_point(aes(text = PLAYER)) +
+    geom_smooth(method = "lm") +
+    theme_bw() +
+    scale_x_continuous(labels = scales::comma) +
+    ggtitle("NBA PER vs Salary") +
+    geom_text(aes(x = 17000000, y = 10, 
+                  label = paste0("Adj R2 = ", round(my.rsquare, 3), "<br>", "Formula = ", my.formula)))
+)
+
+```
+
+
+## Storytelling {.tabset}
+
+### Highlighting Age on PER vs Salary
+
+We see there are very few light blue dots above the regression line, indicating older players tend to underperform their contract value. The exceptions, like Duncan and Nowitzki, are future hall of famers who signed team-friendly deals. 
+
+```{r, message=FALSE, fig.width=8, fig.height=6}
+
+
+ggplotly(
+  ggplot(nba.data.tidy, aes(x = SALARY, y = PER)) +
+    geom_point(aes(text = PLAYER, color = AGE)) +
+    geom_smooth(method = "lm") +
+    theme_bw() +
+    scale_x_continuous(labels = scales::comma) +
+    ggtitle("NBA PER vs Salary") +
+    scale_color_gradient2(low="#004c6d", mid = "#6996b3", high = "#c1e7ff", midpoint = 27)
+)
+
+```
+
+### Age Groups
+
+As we isolate specific age groups we start to see a couple of important things. 
+
+* Due to rookie contracts, teams can get very high value at a low cost if they draft well. 
+* Players 23-29 see some of the largest contract and some of the highest PER values. We're seeing players in their prime.
+* Few players older than 30 out-perform their contract unless they're making less than $10M. Even in those cases, we see a number of future hall of famers. 
+
+```{r, message=FALSE, fig.width=8, fig.height=6}
+
+nba.data.tidy$age.range <- cut(nba.data.tidy$AGE, 
+                               breaks = c(-Inf, 22, 26, 29, 32, Inf), 
+                               labels = c("Under 23", "23-25", "26-29", "30-32", "33+"))
+
+ggplotly(
+  ggplot(nba.data.tidy, aes(x = SALARY, y = PER)) +
+    geom_point(aes(text = PLAYER, color = age.range)) +
+    geom_smooth(method = "lm") +
+    theme_bw() +
+    scale_x_continuous(labels = scales::comma) +
+    ggtitle("NBA PER vs Salary") +
+    scale_color_brewer(palette = "Set1")
+)
+
+```
+
+
+
+
+
